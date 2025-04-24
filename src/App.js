@@ -15,8 +15,8 @@ const clerkPubKey = process.env.REACT_APP_CLERK_PUBLISHABLE_KEY;
 function App() {
   return (
     <ThemeProvider>
-      <TaskProvider>
-        <ClerkProvider publishableKey={clerkPubKey}>
+      <ClerkProvider publishableKey={clerkPubKey}>
+        <TaskProvider>
           <Router>
             <div className="min-h-screen bg-background">
               <Navbar />
@@ -31,8 +31,8 @@ function App() {
               <Toaster />
             </div>
           </Router>
-        </ClerkProvider>
-      </TaskProvider>
+        </TaskProvider>
+      </ClerkProvider>
     </ThemeProvider>
   );
 }

@@ -7,6 +7,21 @@ import { useTasks } from '../contexts/TaskContext';
 import { TodoForm } from './TodoForm';
 import { Todo } from './Todo';
 import { format, isToday, isFuture, isPast, parseISO } from 'date-fns';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
+
+// Predefined colors with their names
+const FOLDER_COLORS = [
+  { name: 'Blue', value: '#3b82f6' },
+  { name: 'Red', value: '#ef4444' },
+  { name: 'Green', value: '#22c55e' },
+  { name: 'Yellow', value: '#eab308' },
+  { name: 'Purple', value: '#a855f7' },
+  { name: 'Pink', value: '#ec4899' },
+  { name: 'Orange', value: '#f97316' },
+  { name: 'Teal', value: '#14b8a6' },
+  { name: 'Indigo', value: '#6366f1' },
+  { name: 'Gray', value: '#6b7280' }
+];
 
 export default function TodoApp() {
   const { 
@@ -24,52 +39,38 @@ export default function TodoApp() {
   const [showTodoForm, setShowTodoForm] = useState(false);
   const [showFolderForm, setShowFolderForm] = useState(false);
   const [newFolderName, setNewFolderName] = useState('');
-  const [newFolderColor, setNewFolderColor] = useState('#3b82f6');
+  const [newFolderColor, setNewFolderColor] = useState(FOLDER_COLORS[0].value);
   const [expandedTasks, setExpandedTasks] = useState({});
 
   // Filter tasks based on the active tab
   const filteredTasks = tasks.filter(task => {
+    if (activeTab === 'completed') {
+      return task.completed;
+    }
+    
     if (!task.date) return activeTab === 'all';
     const taskDate = parseISO(task.date);
     
     switch (activeTab) {
       case 'all':
-        return true;
+        return !task.completed;
       case 'today':
-        return isToday(taskDate);
+        return isToday(taskDate) && !task.completed;
       case 'upcoming':
-        return isFuture(taskDate);
-      case 'completed':
-        return task.completed;
+        return isFuture(taskDate) && !task.completed;
       default:
         return true;
     }
   });
 
   // Get main tasks (tasks that can have sub-tasks)
-  const mainTasks = getMainTasks().filter(task => {
-    if (!task.date) return activeTab === 'all';
-    const taskDate = parseISO(task.date);
-    
-    switch (activeTab) {
-      case 'all':
-        return true;
-      case 'today':
-        return isToday(taskDate);
-      case 'upcoming':
-        return isFuture(taskDate);
-      case 'completed':
-        return task.completed;
-      default:
-        return true;
-    }
-  });
+  const mainTasks = filteredTasks.filter(task => task.isMainTask && !task.parentTaskId);
 
   // Handle adding a new task
   const handleAddTask = (taskData) => {
     addTask({
       ...taskData,
-      isMainTask: true,
+      isMainTask: taskData.isMainTask,
       parentTaskId: null,
       completed: false
     });
@@ -108,6 +109,10 @@ export default function TodoApp() {
       ...prev,
       [taskId]: !prev[taskId]
     }));
+  };
+
+  const getColorName = (colorValue) => {
+    return FOLDER_COLORS.find(c => c.value === colorValue)?.name || 'Custom';
   };
 
   return (
@@ -153,15 +158,32 @@ export default function TodoApp() {
                   value={newFolderName}
                   onChange={(e) => setNewFolderName(e.target.value)}
                 />
-                <div className="flex items-center gap-2">
-                  <input
-                    type="color"
-                    value={newFolderColor}
-                    onChange={(e) => setNewFolderColor(e.target.value)}
-                    className="w-10 h-10 rounded cursor-pointer"
-                  />
-                  <span className="dark:text-gray-200">Folder Color</span>
-                </div>
+                <Select value={newFolderColor} onValueChange={setNewFolderColor}>
+                  <SelectTrigger className="w-full">
+                    <SelectValue>
+                      <div className="flex items-center gap-2">
+                        <div 
+                          className="w-4 h-4 rounded-full" 
+                          style={{ backgroundColor: newFolderColor }}
+                        />
+                        {getColorName(newFolderColor)}
+                      </div>
+                    </SelectValue>
+                  </SelectTrigger>
+                  <SelectContent>
+                    {FOLDER_COLORS.map((color) => (
+                      <SelectItem key={color.value} value={color.value}>
+                        <div className="flex items-center gap-2">
+                          <div 
+                            className="w-4 h-4 rounded-full" 
+                            style={{ backgroundColor: color.value }}
+                          />
+                          {color.name}
+                        </div>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
                 <div className="flex justify-end gap-2">
                   <Button 
                     type="button"
@@ -194,23 +216,25 @@ export default function TodoApp() {
         <TabsContent value="all" className="mt-4">
           <Card>
             <CardContent className="pt-6">
-              {mainTasks.length > 0 ? (
+              {filteredTasks.length > 0 ? (
                 <div className="space-y-4">
-                  {mainTasks.map(task => (
+                  {filteredTasks.map(task => (
                     <div key={task.id} className="border rounded-lg p-4">
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-2">
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => toggleExpanded(task.id)}
-                          >
-                            <ChevronRight 
-                              className={`h-4 w-4 transition-transform ${
-                                expandedTasks[task.id] ? 'rotate-90' : ''
-                              }`}
-                            />
-                          </Button>
+                          {task.isMainTask && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => toggleExpanded(task.id)}
+                            >
+                              <ChevronRight 
+                                className={`h-4 w-4 transition-transform ${
+                                  expandedTasks[task.id] ? 'rotate-90' : ''
+                                }`}
+                              />
+                            </Button>
+                          )}
                           <Todo
                             task={task}
                             onToggle={handleToggleTask}
@@ -218,7 +242,7 @@ export default function TodoApp() {
                           />
                         </div>
                       </div>
-                      {expandedTasks[task.id] && (
+                      {task.isMainTask && expandedTasks[task.id] && (
                         <div className="ml-8 mt-2 space-y-2">
                           {getSubTasks(task.id).map(subTask => (
                             <Todo
@@ -243,23 +267,25 @@ export default function TodoApp() {
         <TabsContent value="today" className="mt-4">
           <Card>
             <CardContent className="pt-6">
-              {mainTasks.length > 0 ? (
+              {filteredTasks.length > 0 ? (
                 <div className="space-y-4">
-                  {mainTasks.map(task => (
+                  {filteredTasks.map(task => (
                     <div key={task.id} className="border rounded-lg p-4">
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-2">
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => toggleExpanded(task.id)}
-                          >
-                            <ChevronRight 
-                              className={`h-4 w-4 transition-transform ${
-                                expandedTasks[task.id] ? 'rotate-90' : ''
-                              }`}
-                            />
-                          </Button>
+                          {task.isMainTask && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => toggleExpanded(task.id)}
+                            >
+                              <ChevronRight 
+                                className={`h-4 w-4 transition-transform ${
+                                  expandedTasks[task.id] ? 'rotate-90' : ''
+                                }`}
+                              />
+                            </Button>
+                          )}
                           <Todo
                             task={task}
                             onToggle={handleToggleTask}
@@ -267,7 +293,7 @@ export default function TodoApp() {
                           />
                         </div>
                       </div>
-                      {expandedTasks[task.id] && (
+                      {task.isMainTask && expandedTasks[task.id] && (
                         <div className="ml-8 mt-2 space-y-2">
                           {getSubTasks(task.id).map(subTask => (
                             <Todo
@@ -292,23 +318,25 @@ export default function TodoApp() {
         <TabsContent value="upcoming" className="mt-4">
           <Card>
             <CardContent className="pt-6">
-              {mainTasks.length > 0 ? (
+              {filteredTasks.length > 0 ? (
                 <div className="space-y-4">
-                  {mainTasks.map(task => (
+                  {filteredTasks.map(task => (
                     <div key={task.id} className="border rounded-lg p-4">
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-2">
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => toggleExpanded(task.id)}
-                          >
-                            <ChevronRight 
-                              className={`h-4 w-4 transition-transform ${
-                                expandedTasks[task.id] ? 'rotate-90' : ''
-                              }`}
-                            />
-                          </Button>
+                          {task.isMainTask && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => toggleExpanded(task.id)}
+                            >
+                              <ChevronRight 
+                                className={`h-4 w-4 transition-transform ${
+                                  expandedTasks[task.id] ? 'rotate-90' : ''
+                                }`}
+                              />
+                            </Button>
+                          )}
                           <Todo
                             task={task}
                             onToggle={handleToggleTask}
@@ -316,7 +344,7 @@ export default function TodoApp() {
                           />
                         </div>
                       </div>
-                      {expandedTasks[task.id] && (
+                      {task.isMainTask && expandedTasks[task.id] && (
                         <div className="ml-8 mt-2 space-y-2">
                           {getSubTasks(task.id).map(subTask => (
                             <Todo
@@ -341,23 +369,25 @@ export default function TodoApp() {
         <TabsContent value="completed" className="mt-4">
           <Card>
             <CardContent className="pt-6">
-              {mainTasks.length > 0 ? (
+              {filteredTasks.length > 0 ? (
                 <div className="space-y-4">
-                  {mainTasks.map(task => (
+                  {filteredTasks.map(task => (
                     <div key={task.id} className="border rounded-lg p-4">
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-2">
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => toggleExpanded(task.id)}
-                          >
-                            <ChevronRight 
-                              className={`h-4 w-4 transition-transform ${
-                                expandedTasks[task.id] ? 'rotate-90' : ''
-                              }`}
-                            />
-                          </Button>
+                          {task.isMainTask && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => toggleExpanded(task.id)}
+                            >
+                              <ChevronRight 
+                                className={`h-4 w-4 transition-transform ${
+                                  expandedTasks[task.id] ? 'rotate-90' : ''
+                                }`}
+                              />
+                            </Button>
+                          )}
                           <Todo
                             task={task}
                             onToggle={handleToggleTask}
@@ -365,7 +395,7 @@ export default function TodoApp() {
                           />
                         </div>
                       </div>
-                      {expandedTasks[task.id] && (
+                      {task.isMainTask && expandedTasks[task.id] && (
                         <div className="ml-8 mt-2 space-y-2">
                           {getSubTasks(task.id).map(subTask => (
                             <Todo

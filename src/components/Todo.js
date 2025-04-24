@@ -5,17 +5,30 @@ import { Checkbox } from './ui/checkbox';
 import { Button } from './ui/button';
 import { TodoForm } from './TodoForm';
 import { cn } from '../lib/utils';
-import { ChevronDown, ChevronRight, Plus, Trash2 } from 'lucide-react';
+import { ChevronDown, ChevronRight, Plus, Trash2, StickyNote, FolderOpen } from 'lucide-react';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
+import FolderSelector from './FolderSelector';
 
 export function Todo({ task }) {
   const [isExpanded, setIsExpanded] = useState(false);
   const [isAddingSubTask, setIsAddingSubTask] = useState(false);
-  const { updateTask, deleteTask, addTask, getSubTasks } = useTasks();
+  const [showNotes, setShowNotes] = useState(false);
+  const [showFolderSelect, setShowFolderSelect] = useState(false);
+  const { updateTask, deleteTask, addTask, getSubTasks, folders } = useTasks();
 
   const subTasks = getSubTasks(task.id);
+  const taskFolder = folders.find(f => f.id === task.folderId) || folders.find(f => f.id === 'default');
 
   const handleToggle = () => {
-    updateTask(task.id, { ...task, completed: !task.completed });
+    const newCompleted = !task.completed;
+    updateTask(task.id, { ...task, completed: newCompleted });
+    
+    // If this is a main task and we're completing it, complete all subtasks
+    if (newCompleted && task.isMainTask) {
+      subTasks.forEach(subTask => {
+        updateTask(subTask.id, { ...subTask, completed: true });
+      });
+    }
   };
 
   const handleDelete = () => {
@@ -23,12 +36,21 @@ export function Todo({ task }) {
   };
 
   const handleAddSubTask = (subTask) => {
+    if (!task.isMainTask) return;
+    
     addTask({
       ...subTask,
       parentTaskId: task.id,
-      isMainTask: false
+      isMainTask: false,
+      folderId: task.folderId, // Inherit folder from parent task
+      date: task.date // Inherit date from parent task
     });
     setIsAddingSubTask(false);
+  };
+
+  const handleFolderChange = (newFolderId) => {
+    updateTask(task.id, { ...task, folderId: newFolderId });
+    setShowFolderSelect(false);
   };
 
   return (
@@ -49,17 +71,35 @@ export function Todo({ task }) {
           >
             {task.title}
           </label>
-          {(task.date || task.time) && (
-            <p className="text-xs text-muted-foreground mt-1">
-              {task.date && format(new Date(task.date), 'MMM d, yyyy')}
-              {task.date && task.time && ' at '}
-              {task.time}
-            </p>
-          )}
+          <div className="flex items-center gap-2 mt-1">
+            {(task.date || task.time) && (
+              <p className="text-xs text-muted-foreground">
+                {task.date && format(new Date(task.date), 'MMM d, yyyy')}
+                {task.date && task.time && ' at '}
+                {task.time}
+              </p>
+            )}
+            {taskFolder && (
+              <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                <FolderOpen className="h-3 w-3" style={{ color: taskFolder.color }} />
+                <span>{taskFolder.name}</span>
+              </div>
+            )}
+          </div>
         </div>
 
         <div className="flex items-center gap-1">
-          {subTasks.length > 0 && (
+          {task.notes && (
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => setShowNotes(!showNotes)}
+            >
+              <StickyNote className="h-4 w-4" />
+            </Button>
+          )}
+          
+          {task.isMainTask && subTasks.length > 0 && (
             <Button
               variant="ghost"
               size="icon"
@@ -73,13 +113,26 @@ export function Todo({ task }) {
             </Button>
           )}
           
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => setIsAddingSubTask(!isAddingSubTask)}
-          >
-            <Plus className="h-4 w-4" />
-          </Button>
+          {task.isMainTask && (
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => setIsAddingSubTask(!isAddingSubTask)}
+            >
+              <Plus className="h-4 w-4" />
+            </Button>
+          )}
+
+          {/* Only show folder selector for main tasks */}
+          {!task.parentTaskId && (
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => setShowFolderSelect(!showFolderSelect)}
+            >
+              <FolderOpen className="h-4 w-4" />
+            </Button>
+          )}
           
           <Button
             variant="ghost"
@@ -91,17 +144,36 @@ export function Todo({ task }) {
         </div>
       </div>
 
-      {isAddingSubTask && (
-        <div className="pl-6">
-          <TodoForm
-            onSubmit={handleAddSubTask}
-            onCancel={() => setIsAddingSubTask(false)}
-            parentTaskId={task.id}
+      {showFolderSelect && !task.parentTaskId && (
+        <div className="pl-6 pr-2 py-2">
+          <FolderSelector
+            value={task.folderId}
+            onChange={handleFolderChange}
           />
         </div>
       )}
 
-      {isExpanded && subTasks.length > 0 && (
+      {showNotes && task.notes && (
+        <div className="pl-6 pr-2 py-2 bg-muted rounded-md">
+          <h4 className="text-sm font-medium mb-1">Notes:</h4>
+          <p className="text-sm text-muted-foreground whitespace-pre-wrap">{task.notes}</p>
+        </div>
+      )}
+
+      {isAddingSubTask && task.isMainTask && (
+        <div className="pl-6">
+          <TodoForm
+            onSubmit={handleAddSubTask}
+            onCancel={() => setIsAddingSubTask(false)}
+            isSubtask={true}
+            parentTaskId={task.id}
+            initialDate={task.date ? new Date(task.date) : new Date()}
+            initialFolderId={task.folderId} // Pass the parent's folder ID
+          />
+        </div>
+      )}
+
+      {isExpanded && task.isMainTask && subTasks.length > 0 && (
         <div className="pl-6 space-y-2">
           {subTasks.map((subTask) => (
             <Todo key={subTask.id} task={subTask} />
