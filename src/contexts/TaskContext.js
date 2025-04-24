@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { format, isToday, isAfter, isBefore, parseISO, isFuture, isPast } from 'date-fns';
+import { useUser } from '@clerk/clerk-react';
 
 // Create the context
 const TaskContext = createContext();
@@ -15,15 +16,27 @@ export function useTasks() {
 
 // Task provider component
 export function TaskProvider({ children }) {
+  const { user, isLoaded } = useUser();
+  
+  // Get storage key based on user ID or use a default for non-authenticated users
+  const getStorageKey = (baseKey) => {
+    if (user) {
+      return `${baseKey}_${user.id}`;
+    }
+    return `${baseKey}_guest`;
+  };
+
   // Initialize state from localStorage or empty arrays
   const [tasks, setTasks] = useState(() => {
-    const savedTasks = localStorage.getItem('tasks');
+    const storageKey = getStorageKey('tasks');
+    const savedTasks = localStorage.getItem(storageKey);
     return savedTasks ? JSON.parse(savedTasks) : [];
   });
 
   const [folders, setFolders] = useState(() => {
     try {
-      const savedFolders = localStorage.getItem('folders');
+      const storageKey = getStorageKey('folders');
+      const savedFolders = localStorage.getItem(storageKey);
       return savedFolders ? JSON.parse(savedFolders) : [
         { id: 'default', name: 'Default', color: '#3b82f6' }
       ];
@@ -33,19 +46,45 @@ export function TaskProvider({ children }) {
     }
   });
 
+  // Update storage keys when user authentication state changes
+  useEffect(() => {
+    if (isLoaded) {
+      // Clear previous data when user state changes
+      setTasks([]);
+      setFolders([{ id: 'default', name: 'Default', color: '#3b82f6' }]);
+      
+      // Load user-specific data if available
+      const tasksKey = getStorageKey('tasks');
+      const foldersKey = getStorageKey('folders');
+      
+      const savedTasks = localStorage.getItem(tasksKey);
+      const savedFolders = localStorage.getItem(foldersKey);
+      
+      if (savedTasks) {
+        setTasks(JSON.parse(savedTasks));
+      }
+      
+      if (savedFolders) {
+        setFolders(JSON.parse(savedFolders));
+      }
+    }
+  }, [isLoaded, user]);
+
   // Save tasks to localStorage whenever they change
   useEffect(() => {
-    localStorage.setItem('tasks', JSON.stringify(tasks));
-  }, [tasks]);
+    const storageKey = getStorageKey('tasks');
+    localStorage.setItem(storageKey, JSON.stringify(tasks));
+  }, [tasks, user]);
 
   // Save folders to localStorage whenever they change
   useEffect(() => {
     try {
-      localStorage.setItem('folders', JSON.stringify(folders));
+      const storageKey = getStorageKey('folders');
+      localStorage.setItem(storageKey, JSON.stringify(folders));
     } catch (error) {
       console.error('Error saving folders:', error);
     }
-  }, [folders]);
+  }, [folders, user]);
 
   // Add a new task
   const addTask = (taskData) => {
@@ -58,6 +97,7 @@ export function TaskProvider({ children }) {
       isMainTask: taskData.isMainTask,
       parentTaskId: taskData.parentTaskId || null,
       folderId: taskData.folderId || 'default',
+      notes: taskData.notes || '',
       createdAt: new Date().toISOString()
     };
 
@@ -201,7 +241,8 @@ export function TaskProvider({ children }) {
     getSubTasks,
     addFolder,
     updateFolder,
-    deleteFolder
+    deleteFolder,
+    isAuthenticated: !!user
   };
 
   return (

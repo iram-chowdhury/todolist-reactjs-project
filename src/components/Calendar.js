@@ -1,34 +1,46 @@
 import { useState } from 'react';
-import { format, parseISO } from 'date-fns';
+import { format, parseISO, isValid, startOfDay } from 'date-fns';
 import { Calendar as CalendarComponent } from './ui/calendar';
 import { Card, CardContent } from './ui/card';
 import { Button } from './ui/button';
-import { Input } from './ui/input';
 import { useToast } from '../hooks/use-toast';
 import { useTasks } from '../contexts/TaskContext';
-import FolderSelector from './FolderSelector';
+import { TodoForm } from './TodoForm';
+import { Todo } from './Todo';
+import { Plus, ChevronRight } from 'lucide-react';
 
 export default function Calendar() {
   const { toast } = useToast();
   const [date, setDate] = useState(new Date());
-  const [newTask, setNewTask] = useState('');
-  const [folderId, setFolderId] = useState('default');
-  const { tasks, addTask, updateTask, deleteTask } = useTasks();
+  const [showTodoForm, setShowTodoForm] = useState(false);
+  const [expandedTasks, setExpandedTasks] = useState({});
+  const { tasks, addTask, updateTask, deleteTask, getSubTasks } = useTasks();
 
-  // Format the selected date as YYYY-MM-DD
-  const selectedDateStr = format(date, 'yyyy-MM-dd');
+  // Format the selected date as YYYY-MM-DD, using startOfDay to prevent timezone issues
+  // Don't add an extra day as it causes the date to shift forward
+  const selectedDateStr = format(startOfDay(date), 'yyyy-MM-dd');
 
-  const addTaskToDate = () => {
-    if (newTask.trim() === '') return;
+  const handleAddTask = (taskData) => {
+    // Ensure the task has a date and time
+    if (!taskData.date || !taskData.time) {
+      toast({
+        title: "Missing date or time",
+        description: "Please select both a date and time for the task",
+        variant: "destructive"
+      });
+      return;
+    }
 
-    // Add the task with the exact date string
+    // Create the task with the selected date from the calendar
+    // Override any date that might have been set in the form
     addTask({
-      title: newTask,
-      date: selectedDateStr,
-      folderId
+      ...taskData,
+      date: selectedDateStr, // Use the selected date from the calendar
+      completed: false,
+      parentTaskId: null, // Ensure this is a top-level task, not a subtask
+      isMainTask: taskData.isMainTask // Preserve the isMainTask value from the form
     });
-
-    setNewTask('');
+    setShowTodoForm(false);
     
     toast({
       title: "Task added",
@@ -36,14 +48,14 @@ export default function Calendar() {
     });
   };
 
-  const toggleTask = (taskId) => {
+  const handleToggleTask = (taskId) => {
     const task = tasks.find(t => t.id === taskId);
     if (task) {
       updateTask(taskId, { ...task, completed: !task.completed });
     }
   };
 
-  const removeTask = (taskId) => {
+  const handleDeleteTask = (taskId) => {
     deleteTask(taskId);
     
     toast({
@@ -52,8 +64,24 @@ export default function Calendar() {
     });
   };
 
+  const toggleExpanded = (taskId) => {
+    setExpandedTasks(prev => ({
+      ...prev,
+      [taskId]: !prev[taskId]
+    }));
+  };
+
   // Get tasks for the selected date
-  const dateTasks = tasks.filter(task => task.date === selectedDateStr);
+  const dateTasks = tasks.filter(task => task.date === selectedDateStr && !task.parentTaskId);
+
+  const formatTaskDate = (dateStr) => {
+    try {
+      const parsedDate = parseISO(dateStr);
+      return isValid(parsedDate) ? format(parsedDate, 'MMMM d, yyyy') : 'Invalid date';
+    } catch (error) {
+      return 'Invalid date';
+    }
+  };
 
   return (
     <div className="p-6 space-y-6">
@@ -70,54 +98,77 @@ export default function Calendar() {
         </div>
 
         <div className="space-y-4">
-          <h2 className="text-lg font-semibold">
-            Tasks for {format(date, 'MMMM d, yyyy')}
-          </h2>
-
-          <div className="flex flex-col gap-2">
-            <Input
-              placeholder="Add a new task"
-              value={newTask}
-              onChange={(e) => setNewTask(e.target.value)}
-              onKeyPress={(e) => e.key === 'Enter' && addTaskToDate()}
-            />
-            <FolderSelector
-              value={folderId}
-              onChange={setFolderId}
-            />
-            <Button onClick={addTaskToDate}>Add</Button>
+          <div className="flex justify-between items-center">
+            <h2 className="text-lg font-semibold">
+              Tasks for {format(date, 'MMMM d, yyyy')}
+            </h2>
+            <Button 
+              variant="outline" 
+              size="sm" 
+              onClick={() => setShowTodoForm(true)}
+            >
+              <Plus className="h-4 w-4 mr-2" />
+              New Task
+            </Button>
           </div>
 
-          <div className="space-y-2">
-            {dateTasks.map((task) => (
-              <Card key={task.id}>
-                <CardContent className="p-4 flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="checkbox"
-                      checked={task.completed}
-                      onChange={() => toggleTask(task.id)}
-                      className="h-4 w-4"
-                    />
-                    <div className="flex flex-col">
-                      <span className={task.completed ? 'line-through text-muted-foreground' : ''}>
-                        {task.title}
-                      </span>
-                      <span className="text-sm text-muted-foreground">
-                        {format(parseISO(task.date), 'MMMM d, yyyy')}
-                      </span>
+          {showTodoForm && (
+            <Card className="mb-4">
+              <CardContent className="pt-6">
+                <TodoForm 
+                  onSubmit={handleAddTask} 
+                  onCancel={() => setShowTodoForm(false)}
+                  initialDate={date}
+                  requireDateTime={true}
+                  isSubtask={false} // Explicitly set this is not a subtask
+                />
+              </CardContent>
+            </Card>
+          )}
+
+          <div className="space-y-4">
+            {dateTasks.length > 0 ? (
+              dateTasks.map(task => (
+                <div key={task.id} className="border rounded-lg p-4">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      {task.isMainTask && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => toggleExpanded(task.id)}
+                        >
+                          <ChevronRight 
+                            className={`h-4 w-4 transition-transform ${
+                              expandedTasks[task.id] ? 'rotate-90' : ''
+                            }`}
+                          />
+                        </Button>
+                      )}
+                      <Todo
+                        task={task}
+                        onToggle={handleToggleTask}
+                        onDelete={handleDeleteTask}
+                      />
                     </div>
                   </div>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => removeTask(task.id)}
-                  >
-                    Delete
-                  </Button>
-                </CardContent>
-              </Card>
-            ))}
+                  {task.isMainTask && expandedTasks[task.id] && (
+                    <div className="ml-8 mt-2 space-y-2">
+                      {getSubTasks(task.id).map(subTask => (
+                        <Todo
+                          key={subTask.id}
+                          task={subTask}
+                          onToggle={handleToggleTask}
+                          onDelete={handleDeleteTask}
+                        />
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ))
+            ) : (
+              <p className="text-center text-gray-500">No tasks for this date</p>
+            )}
           </div>
         </div>
       </div>

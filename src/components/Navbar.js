@@ -15,7 +15,7 @@ export default function Navbar() {
         <div className="flex h-16 items-center justify-between">
           <div className="flex items-center space-x-8">
             <Link to="/" className="text-xl font-bold">
-              AI Todo
+              To Do List Project by Iram Chowdhury
             </Link>
             <div className="hidden md:flex space-x-4">
               <Link to="/">
@@ -36,7 +36,7 @@ export default function Navbar() {
                 <Button
                   variant={isActive('/projects') ? 'default' : 'ghost'}
                 >
-                  Projects
+                  Folders
                 </Button>
               </Link>
               <Link to="/settings">
